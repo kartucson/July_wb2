@@ -153,7 +153,7 @@ phy_min_b <- phy_min
 
 ### Additional phy data, just append to current dataset:
 
-phy_2 <- read.csv("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Phy\\batch3\\phy_5min.csv")
+phy_2 <- read.csv("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Phy\\batch4\\phy_5min.csv")
 phy_min <- read.csv("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Phy\\batch3\\phy_5min_exp.csv")
 
 phy_min$Timestamp <- as.POSIXct(phy_min$Timestamp)
@@ -205,18 +205,67 @@ phy_ieq <- phy_ieq[order(phy_ieq$ID,phy_ieq$Timestamp),]
 
 write.csv(phy_ieq,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\HRV_IEQ_july_1min.csv')
 
-## Conservative dataset (removing nulls) 
-#write.csv(na.omit(phy_ieq),'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\HRV_IEQ_NotNull.csv')
+### 22nd July
 
-## Analyze data with SDNN > 180
-# Note phy_part has no data with SDNN > 180
+phy_ieq <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\HRV_IEQ_july_1min.csv')
 
-#Add two variables: Day of week and Time & Time of day for convenience
+phy_ieq$ID <- as.factor(phy_ieq$ID)
+phy_ieq$Timestamp <- as.POSIXct(phy_ieq$Timestamp)
+phy_ieq$Date <- as.Date(phy_ieq$Date)
 
-phy_ieq$Time <- format(phy_ieq$Timestamp,"%H:%M")
-phy_ieq$Time <- as.POSIXct(strptime(phy_ieq$Time, "%H:%M"))
+## Filter out as per the pickup, drop-off, and removed time duration ##
 
-#phy_ieq$Time_seconds <- as.numeric(phy_ieq$Time) - min(as.numeric(phy_ieq$Time))
+part_time <- read.xlsx('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\pickup_drop_of_sensor_times.xlsx',sheetName="all_p")
+#colnames(part_time)
+
+part_df <- data.frame(Date = part_time$Date, ID = part_time$ID,
+                      Time_in = part_time$Time_in,Time_out = part_time$Time_out,
+                      Tin1 = part_time$Tin1,Tout1 = part_time$Tout1,Tin2 = part_time$Tin2,Tout2 = part_time$Tout2) 
+
+convert_time <- function(var_in)
+{  
+  d <- as.POSIXct(strptime(var_in, "%H:%M"))
+  return(d)
+}
+
+for(j in 3:ncol(part_df))           ### Convert all the time variables from char to time format
+{
+  part_df[,j] <- convert_time(part_df[,j])
+}
+
+part_df$ID <- as.factor(part_df$ID)
+
+# write.csv(part_df,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\pickup_drop_times.csv')
+
+part_wears <- merge(phy_ieq,part_df,by=c("ID","Date"),all.x=TRUE)
+
+part_wears <- part_wears[order(part_wears$ID,part_wears$Timestamp),]
+
+# write.csv(part_wears,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\time_filters_completed_data.csv')
+##
+#part_wears$Timestamp <- as.POSIXct(part_wears$Timestamp)
+part_wears$Time <- format(part_wears$Timestamp,"%H:%M")
+part_wears$Time <- as.POSIXct(strptime(part_wears$Time, "%H:%M"))
+
+#part_wears$Time <- as.POSIXct(strptime(part_wears$Timestamp, "%H:%M"))
+#part_wears$Time <- as.POSIXct(part_wears$Timestamp, format="%H:%M")
+
+d1 <- subset(part_wears,part_wears$Time_in < part_wears$Time & part_wears$Time_out > part_wears$Time)
+
+## Too high SDNN  ####
+data_pruned <- subset(d1,d1$SDNN < 180 & d1$SDNN > 0) ## Filters as well as removes NA
+data_outliers <- subset(d1,d1$SDNN >= 180)
+data_missing <- subset(d1,d1$SDNN <= 0 | is.na(d1$SDNN))
+
+#write.csv(data_pruned,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\all_data_june17.csv')
+### Check the HLM model in the next module hlm_june.R
+
+## To work this out later
+d2 <- subset(d1,!(d1$Tin1 > d1$Time & d1$Tout1 < d1$Time) | is.na(d1$Tin1) | is.na(d1$Tout1))
+d2 <- subset(d1,d1$Tin1 < d1$Time | d1$Tout1 > d1$Time)
+d3 <- subset(d2,!(d2$Tin2 < d2$Time & d2$Tout2 > d2$Time)) 
+
+## Generate ToD and DoW
 
 ToD_DoW_gen <- function(data_in)
 {
@@ -235,35 +284,37 @@ ToD_DoW_gen <- function(data_in)
   return(t)
 }
 
-data_time <- ToD_DoW_gen(phy_ieq)
+data_time <- ToD_DoW_gen(d1)
 data_time$Time <- format(data_time$Time,"%H:%M")
 
 ## (a) Merge participant information 
 
-Part_demo <- read.xlsx("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\Psy_intake_work_doc.xlsx",sheetName = "trim")
-
-#Part_demo_trunc <- Part_demo[,colnames(Part_demo) %in% c("ID","Gender","Ethnicity","Age",    
-#                          "Experience","BMI")]
+Part_demo <- read.xlsx("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\Psy_intake_work_doc.xlsx",sheetName = "All_trim")
 
 data_with_demo <- merge(data_time,Part_demo,by = c("ID"),all.x=TRUE)
 
 ### (b) Merge psy information
 
-psy <- read.xlsx('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\hourly_survey_july.xlsx',sheetName="All")
-#psy_wwn<- psy[,colnames(psy)%in% c("ID","Form","Form_start_date","space","preoccupation","closest_space_num","caffeine")]
+#psy <- read.xlsx('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\hourly_survey_july.xlsx',sheetName="All")
+
+psy <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\hourly_survey_july_trim.csv')
 
 psy_wwn <- psy
 
 psy_wwn_1 <- subset(psy_wwn,Form != "Missing")
-psy_wwn_1$Timestamp <- round(as.POSIXct(psy_wwn_1$Form_start_date),"mins")  #
+psy_wwn_1$Timestamp <- round(as.POSIXct(strptime(psy_wwn_1$Form_start_date, "%m/%d/%Y %H:%M")),"mins")  #
 psy_wwn_1$ID <- as.factor(psy_wwn_1$ID)
 psy_wwn_2 <- psy_wwn_1[order(psy_wwn_1$ID,psy_wwn_1$Timestamp),]
+
+data_dem2 <- data_with_demo[order(data_with_demo$ID,data_with_demo$Timestamp),] 
 
 # Merge psy and data_with_demo
 ### Left join, since many participants data are not present in the hrv_ieq sheets yet
 
 #hip <- merge(data_with_demo,psy_wwn_2,by = c("Timestamp","ID"),all.x=TRUE,all.y=TRUE)  
-data_with_demo_caffeine <- merge(data_with_demo,psy_wwn_2,by = c("Timestamp","ID"),all.x=TRUE)
+data_with_demo_caffeine <- merge(data_dem2,psy_wwn_2,by = c("Timestamp","ID"),all.x=TRUE)
+
+#write.csv(data_with_demo_caffeine,"temp.csv")
 
 ### Pad the psy data till last 30 minutes (Remember for HLM model, space included will reduce the dof because of these null values
 ### Better to have lesser datapoints rather than inaccurate space mapping: 
@@ -278,13 +329,15 @@ for (i in 1:nrow(data_padded))
   if (!is.na(data_padded$caffeine[i]))
   {
     #for (t in 38:42)   ### These are the columns with psy variables that 'need' padding
-    for (t in 45:ncol(data_padded))   ### These are the columns with psy variables that 'need' padding
+    for (t in (ncol(data_padded) - ncol(psy_wwn_2) +1):ncol(data_padded))   ### These are the columns with psy variables that 'need' padding
     { 
       for (r in 1:30)
       {
         if (i > r)       ### Logic begins only after 30 minutes
         {
-          if(!is.na(data_padded$caffeine[i-r]) | data_padded$ID[i-r] != data_padded$ID[i] )
+          #if(!is.na(data_padded$caffeine[i-r]) | data_padded$ID[i-r] != data_padded$ID[i] )
+          # | difftime data_padded$Timestamp[100],data_padded$Timestamp[10])) > 10
+          if(data_padded$ID[i-r] != data_padded$ID[i]  )
           { data_padded$flag[i-r] <- "flag" } 
           else
           { data_padded[i-r,t] <- data_padded[i,t] 
@@ -296,17 +349,26 @@ for (i in 1:nrow(data_padded))
   }
 }
 
+## FLAW IN THIS CODE, as disconnected points also get padded (that is, need to check for subsequent points > 30 minutes
+## difftime condition)
+
 write.csv(data_padded,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\psy_july_padded.csv')
 
 ## Adding spatial data information 
 
 spatial_char <- read.xlsx("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Spatial_char.xlsx",sheetName = "All_july")
-
 spatial_char$space <- tolower(spatial_char$Space)
+
+data_padded$Space <- data_padded$space
+data_padded$space <- tolower(data_padded$Space)
 
 data_with_space <- merge(data_padded,spatial_char,by.x = c("space"),by.y = c("space"),all.x=TRUE)
 
-#write.csv(data_with_space,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\with_space.csv')
+data_with_space <- data_with_space[order(data_with_space$ID, data_with_space$Timestamp),]
+
+write.csv(data_with_space,na="",'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\data_wb2_C1_all.csv')
+
+## Need to clean 'space' from both the datasets before merging manually!!
 
 ### DATA PRUNING ####
 
@@ -318,54 +380,6 @@ data_with_space <- merge(data_padded,spatial_char,by.x = c("space"),by.y = c("sp
 ### Sheet with time of pickup, drop and interim breaks ####
 
 #Keep only Morning, afternoon and evening for filtering office hours
-data_in_office <- subset(data_with_space,data_with_space$ToD == "Morning" | data_with_space$ToD == "Afternoon" | data_with_space$ToD == "Evening")
+#data_in_office <- subset(data_with_space,data_with_space$ToD == "Morning" | data_with_space$ToD == "Afternoon" | data_with_space$ToD == "Evening")
 
-## A more accurate method is to filter out as per the pickup, drop-off, and removed time duration ##
 
-part_time <- read.xlsx('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\pickup_drop_till_138.xlsx',1)
-#colnames(part_time)
-
-part_df <- data.frame(Date = part_time$Day, ID = part_time$ID,BL = part_time$BL,Time_in = part_time$Time_in,Time_out = part_time$Time_out,Tin1 = part_time$Tin1,Tout1 = part_time$Tout1,Tin2 = part_time$Tin2,Tout2 = part_time$Tout2) 
-
-convert_time <- function(var_in)
-{  
-  d <- as.POSIXct(strptime(var_in, "%H:%M"))
-  return(d)
-}
-
-for(j in 4:ncol(part_df))           ### Convert all the time variables from char to time format
-{
-  part_df[,j] <- convert_time(part_df[,j])
-}
-
-part_df$ID <- as.factor(part_df$ID)
-
-part_wears <- merge(data_in_office,part_df,by=c("ID","Date"))
-
-part_wears <- part_wears[order(part_wears$ID,part_wears$Timestamp),]
-
-# write.csv(part_wears,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\time_filters_completed_data.csv')
-##
-
-part_wears$Time <- as.POSIXct(strptime(part_wears$Time, "%H:%M"))
-
-d1 <- subset(part_wears,part_wears$Time_in < part_wears$Time & part_wears$Time_out > part_wears$Time)
-## (11291/14290 are to be seen here)
-
-## Too high SDNN  ####
-data_pruned <- subset(d1,d1$SDNN < 180 & d1$SDNN > 0)
-
-data_outliers <- subset(d1,d1$SDNN >= 180)
-
-#write.csv(data_pruned,'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\all_data_june17.csv')
-
-### Check the HLM model in the next module hlm_june.R
-
-## To work this out later
-d2 <- subset(d1,!(d1$Tin1 > d1$Time & d1$Tout1 < d1$Time))
-d2 <- subset(d1,d1$Tin1 < d1$Time | d1$Tout1 > d1$Time)
-& !(d1$Tin2 < d1$Time & d1$Tout2 > d1$Time) 
-data_filtered_time
-
-# Use na.action = na.exclude in the regression model (and then smoothen the prediction as much as possible)
-# datetime <- as.POSIXlt(paste(yr, mo, dy, hr, mn), format = "%Y %m %d %H %M"))
