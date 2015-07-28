@@ -20,7 +20,8 @@ library(nlme)
 
 library(catnet)
 
-data_full <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\wb2_analysis_dataset.csv')
+#data_full <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\wb2_analysis_dataset.csv')
+data_full <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\july_integration\\data_wb2_all.csv')
 
 ## What all this dataset contains:
 # (a) Wearable (2)
