@@ -25,20 +25,11 @@ library(psych)
 library(FactoMineR)
 library(psych)
 
-psy <- read.xlsx('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\hourly_survey_july.xlsx',sheetName="All")
-
-#psy_wwn<- psy[,colnames(psy)%in% c("ID","Form","Form_start_date","space","preoccupation","closest_space_num","caffeine")]
-
-psy_wwn_1 <- subset(psy,Form != "Missing")
-psy_wwn_1$Timestamp <- round(as.POSIXct(psy_wwn_1$Form_start_date),"mins")  #
-psy_wwn_1$ID <- as.factor(psy_wwn_1$ID)
-psy_wwn_2 <- psy_wwn_1[order(psy_wwn_1$ID,psy_wwn_1$Timestamp),]
-
-psy_in <- psy_wwn_2
+psy_in <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\wb2_analysis_dataset.csv')
 
 colnames(psy_in)
 
-fit <- fa(psy_in[,27:34], nfactors=2, rotate="varimax",fm="pa")
+fit <- fa(psy_in[,31:38], nfactors=2, rotate="varimax",fm="pa")
 fit # print results
 plot(fit)
 text(fit$scores[,1],fit$scores[,2],cex= 0.7, pos=3)
@@ -46,14 +37,10 @@ text(fit$scores[,1],fit$scores[,2],cex= 0.7, pos=3)
 
 load <- fit$loadings[,1:2] 
 plot(load,type="n",xlab="Component 1",ylab = "Component 2") # set up plot 
-text(load,labels=names(psy_in[,27:34]),cex=0.8)
+text(load,labels=names(psy_in[,31:38]),cex=0.8)
 abline(h = 0, v = 0, col = "gray60")
 
 write.csv(round(fit$scores,2),'C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\Factor_scores.csv')
-
-P_ID_lookup <- read.xlsx("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\hourly_survey_july.xlsx",sheetName="P_ID_lookup")
-
-psy_in_loc <- merge(psy_in,P_ID_lookup,by = c("ID"))
 
 ## MANOVA of Component 1, Component 2, Focus, Productivity on Rooms, base locations, subject to participant
 ##
@@ -62,56 +49,142 @@ psy_in_loc <- merge(psy_in,P_ID_lookup,by = c("ID"))
 ### Why loss of participants (so many?)
 #### Timings of participants in office in pickup_drop_till_138.xlsx
 
-psy_fac <- cbind(psy_in_loc,round(fit$scores,2))
+system.time( psy_dis <- discreta(psy_in) )
+
+psy_fac <- cbind(psy_dis,round(fit$scores,2))
 
 ## PA2 is arousal and PA1 is valence
 
 # Dataframe with Psy and groups
 
 data_psy <- data.frame(Focus = psy_fac$focused, Productive = psy_fac$productive, Valence = psy_fac$PA1,
-                       Arousal = psy_fac$PA2,ID = psy_fac$ID, room = psy_fac$space, BL = psy_fac$Base_location )
+                       Arousal = psy_fac$PA2,ID = psy_fac$ID, space = psy_fac$wing.cluster,
+                       BL = psy_fac$Base_location, Gender= psy_fac$Gender,
+                       ToD = psy_fac$ToD,DoW = psy_fac$DoW, Alcohol = psy_fac$Alcohol,
+                       BMI = psy_fac$BMI_gr, Age = psy_fac$Age_gr,
+                       Health = psy_fac$Health_condition,Current_task = psy_fac$Current_task,
+                       caffeine = psy_fac$caffeine,Natural_light = psy_fac$Natural_light,
+                       White_noise = psy_fac$white.noise)
 
 data_psy_in <- scale(as.data.frame(data_psy[,1:4]), center=TRUE, scale = TRUE)
 
+# data_p <- as.data.frame(na.omit(data_psy))
+
+#data_in_out_t <- data.frame(data_psy_in, data_psy[,!colnames(data_psy)%in% colnames(data_psy_in)])
+
+data_in_out_t <- data.frame(data_psy_in, data_psy)
+
+data_in_out <- na.omit(data_in_out_t)
+
 write.csv(data_psy,"temp.csv")
+
+write.csv(data_in_out,"temp.csv")
 #data_scale <- scale(as.data.frame(data_psy), center=TRUE, scale = TRUE)
+#data_mat <- data.frame(Y = data_in_out[,1:4], X = data_in_out[,5:18])
+# data_x <- data_in_out[,5:18]
 
-data_manova <- manova(data_psy_in ~ data_psy[,5] + data_psy[,6] + data_psy[,7])
+### 
 
-data_manova.2 <- manova(data_psy_in ~ data_psy[,7] + data_psy[,5])
+data_manova <- manova(cbind(Focus,Productive,Valence,Arousal) ~ ID + space +
+      Gender+ToD+DoW+Alcohol+BMI+Age+Health+
+        Current_task+caffeine+Natural_light+White_noise + BL,data_in_out)
 
-summary.aov( data_manova.2)
+summary.aov( data_manova)
 
-data_m <- data.frame(data_psy_in,Base = data_psy[,7],ID = data_psy[,5])
 
-write.csv(data_m,"Base_locations_psy_comparison.csv")
+data_manova2 <- manova(cbind(Focus,Productive,Valence,Arousal) ~ space +
+                         Gender+ToD+DoW+BMI+Age+Health+
+                         Current_task+caffeine+Natural_light+White_noise + BL +Alcohol 
+                        ,data_in_out)
 
-means.ID <- aggregate(cbind(Focus,Productive,Valence,Arousal) ~ ID, data_m, mean)  ## Mean of all groups
-means.ID[,2:5] <- round(means.ID[,2:5],2)
+ToD+DoW+Alcohol+BMI+Age+Health+
+  Current_task+caffeine+Natural_light+White_noise + BL
 
-counts.ID <- aggregate(cbind(Focus,Productive,Valence,Arousal) ~ ID, data_m, FUN = function(x){NROW(x)})  ## count of all groups
+summary.aov( data_manova2)
 
-means.BL <- aggregate(cbind(Focus,Productive,Valence,Arousal) ~ Base, data_m, mean)  ## Mean of all groups
-means.BL[,2:5] <- round(means.BL[,2:5],2)
+### NN: ## Just the group means of Males, Age_group, BMI,
+### Base_locations, wing.cluster, ID --> All psy
+setwd("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\July\\output_sheets")
 
-counts.BL <- aggregate(cbind(Focus,Productive,Valence,Arousal) ~ Base, data_m, FUN = function(x){NROW(x)})  ## count of all groups
+data_pre_screen <- data.frame(data_psy_in, psy_fac)
+
+write.csv(data_pre_screen,"Base_locations_psy_comparison.csv")
+
+#data_num <- data_pre_screen[,c(1:8,12,14,25,29:33,35:48,22,23)]
+
+data_num <- data_pre_screen[,c(1:4,8:11,13:17,29:33,35:48,22,25,23)]
+
+means.ID <- aggregate(as.matrix(data_num) ~ ID, data_pre_screen, mean,na.action=na.exclude)  ## Mean of all groups
+means.ID[,2:ncol(means.ID)] <- round(means.ID[,2:ncol(means.ID)],2)
+
+counts.ID <- aggregate(as.matrix(data_num) ~ ID, data_pre_screen, FUN = function(x){NROW(x)})  ## count of all groups
+
+write.csv(data.frame(means.ID,count = counts.ID[,2]),"Mean_for_participants.csv")
+
+means.BL <- aggregate(as.matrix(data_num) ~ Base_location, data_pre_screen, mean)  ## Mean of all groups
+means.BL[,2:ncol(means.BL)] <- round(means.BL[,2:ncol(means.BL)],2)
+
+counts.BL <- aggregate(as.matrix(data_num) ~ Base_location, data_pre_screen, FUN = function(x){NROW(x)})  ## count of all groups
+
+#length(levels(data_pre_screen$ID))
 
 write.csv(data.frame(means.BL,count = counts.BL[,2]),"Base_locations_psy_comparison_results.csv")
 
-means.all.ID <- aggregate(cbind(focused,productive,tense,content,
-                                sad,alert,tired,happy,upset,calm) ~ ID, psy_fac, mean)  ## Mean of all groups
-means.all.ID[,2:11] <- round(means.all.ID[,2:11],2)
+participants_dist <- aggregate(ID ~ Base_location + Gender, data_pre_screen, FUN = function(x){length(unique(x))})  ## count of all groups
 
-write.csv(means.all.ID,"Mean_psy__of_participants.csv")
+means.wing <- aggregate(as.matrix(data_num) ~ wing.cluster, data_pre_screen, mean)  ## Mean of all groups
+means.wing[,2:ncol(means.wing)] <- round(means.wing[,2:ncol(means.wing)],2)
 
-Part_demo <- read.xlsx("C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\Psy\\Psy_intake_work_doc.xlsx",sheetName = "trim")
+counts.wing <- aggregate(as.matrix(data_num) ~ wing.cluster, data_pre_screen, FUN = function(x){NROW(x)})  ## count of all groups
 
-data_with_demo <- merge(means.all.ID,Part_demo,by = c("ID"),all.x=TRUE)
+write.csv(data.frame(means.wing,count = counts.wing[,2]),"Mean_wing_locations.csv")
 
-write.csv(data_with_demo,"Mean_psy_with_big5.csv")
 
-plot_preoc <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\working_files\\all_data_june17.csv')
+####################################################### Data Mining #################
 
-plot(plot_preoc$preoccupation_a,plot_preoc$SDNN..milisec..)
+'''
+Formula <- formula(paste("y ~ ", 
+                         paste(PredictorVariables, collapse=" + ")))
+lm(Formula, Data)
+'''
+library(randomForest)
+library(rpart)
+library(tree)
 
-plot(sata_or$preoccupation,sata_or$SDNN)
+OUTPUTS = data_in_out[,1:4]
+INPUTS = data_in_out[,5:18]
+
+Formula <- formula(paste("data_in_out[,2]~",paste(colnames(data_in_out)[5:18],collapse="+"))) 
+
+system.time( fit2 <- randomForest(Formula,   data=data_in_out) )
+print(fit2) # view results 
+importance(fit2) # importance of each predictor
+
+system.time( r.SDNN <- rpart(SDNN~., data= data_cl_imputed, method="anova") )
+plot(r.SDNN, uniform=TRUE, 
+     main="Regression tree ")
+text(r.SDNN, use.n=TRUE, all=TRUE, cex=.8)
+as.data.frame(r.SDNN$variable.importance)
+
+c_tr <- tree(SDNN~.,data=data_cl_imputed,method="anova") 
+cv.model <- cv.tree(c_tr)
+summary(c_tr)
+
+library(e1071)
+## OR ksvm ?
+
+data_cl_imputed <- data_cl_imputed[,!colnames(data_cl_imputed)%in%c("Smoking")]
+system.time( svr_sdnn <- svm(SDNN ~ .,  data = data_cl_imputed) )
+
+
+Cross validation to find the best tree:
+  cv.model <- cv.tree(tree.model)
+
+ICC1(aov(SDNN~Base_location,data=data_cl_imputed))  ## 0.68 %
+
+
+###### IEQ, Focus in HLM model ######
+
+datap_full <- read.csv('C:\\Users\\karthik\\Google Drive\\GSA DATA\\Data integration\\wb2_analysis_dataset.csv')
+
+
